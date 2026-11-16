@@ -11,10 +11,14 @@ const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
 const ROOT = __dirname;
-const DATA_DIR = path.join(ROOT, 'data');
+const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'security-dues.db');
 const PORT = Number(process.env.PORT) || 4173;
 const MAX_BODY = 10 * 1024 * 1024;
+
+// Optional password gate for public deployments. Leave APP_PASSWORD unset locally.
+const APP_USER = process.env.APP_USER || 'admin';
+const APP_PASSWORD = process.env.APP_PASSWORD || '';
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -43,6 +47,25 @@ function sendJson(res, status, payload) {
     'Cache-Control': 'no-store'
   });
   res.end(JSON.stringify(payload));
+}
+
+function safeEqual(a, b) {
+  const left = Buffer.from(String(a));
+  const right = Buffer.from(String(b));
+  if (left.length !== right.length) return false;
+  return require('crypto').timingSafeEqual(left, right);
+}
+
+function authorized(req) {
+  if (!APP_PASSWORD) return true;
+  const header = String(req.headers.authorization || '');
+  if (!header.startsWith('Basic ')) return false;
+  const decoded = Buffer.from(header.slice(6), 'base64').toString('utf8');
+  const split = decoded.indexOf(':');
+  if (split < 0) return false;
+  const user = decoded.slice(0, split);
+  const pass = decoded.slice(split + 1);
+  return safeEqual(user, APP_USER) && safeEqual(pass, APP_PASSWORD);
 }
 
 function readBody(req) {
@@ -150,6 +173,16 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Render health checks stay open; everything else can be password protected.
+  if (pathname !== '/api/health' && !authorized(req)) {
+    res.writeHead(401, {
+      'WWW-Authenticate': 'Basic realm="Security Dues", charset="UTF-8"',
+      'Content-Type': 'text/plain; charset=utf-8'
+    });
+    res.end('Authentication required');
+    return;
+  }
+
   if (pathname.startsWith('/api/')) {
     handleApi(req, res, pathname).catch((err) => {
       console.error('API error', err);
@@ -201,4 +234,5 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`Security Dues running at http://localhost:${PORT}`);
   console.log(`SQLite database: ${DB_FILE}`);
+  console.log(`Password protection: ${APP_PASSWORD ? 'on (' + APP_USER + ')' : 'off'}`);
 });

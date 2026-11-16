@@ -29,9 +29,40 @@ Requires **Node.js 22.5 or newer** — the server uses the built-in `node:sqlite
 
 Or any static server, e.g. `npx serve .`. Opening `index.html` directly from disk mostly works, but the service worker (and therefore installability/offline) needs `http://localhost` or HTTPS, and the database sync needs the Node server.
 
-## Deploy
+## Deploy on Render
 
-The front end is a plain static site, but the database API (`/api/state`) is provided by `serve.js`. If you upload only the static files to Netlify, Vercel, Cloudflare Pages or GitHub Pages, the app falls back to browser-only storage. To keep the SQLite database, run `serve.js` on your machine (or a small Node host with a persistent disk).
+The app needs a Node service (not a static site) because the SQLite database lives on the server.
+
+**Option A — Blueprint (recommended)**
+
+1. Push this repo to GitHub.
+2. In Render: **New → Blueprint**, connect the repository.
+3. Render reads `render.yaml` and creates the web service plus a 1 GB disk at `/var/data`.
+4. When prompted, set **`APP_PASSWORD`** to a password you choose. Leave `APP_USER` as `admin` or change it.
+5. Deploy, then open the URL and complete setup.
+
+**Option B — Manual web service**
+
+1. **New → Web Service**, connect the repo, branch `main`.
+2. Runtime **Node**; build command `npm install`; start command `node serve.js`.
+3. Add environment variables:
+   - `NODE_VERSION=22.22.1` (SQLite needs Node 22.5+)
+   - `DATA_DIR=/var/data`
+   - `APP_PASSWORD=your-password` (recommended)
+   - `APP_USER=admin` (optional)
+4. Add a **persistent disk**: mount path `/var/data`, 1 GB. This requires the Starter plan or higher.
+5. Set the health check path to `/api/health`. Deploy.
+
+**Important**
+
+- **Without a persistent disk** (free plan), the SQLite file is erased on every deploy or restart. Use the disk for real records.
+- **The URL is public.** Set `APP_PASSWORD` so visitors are asked for a password; otherwise anyone with the link can read and edit the ledger.
+- The deployed site starts with an empty database. To move existing records, use **Settings → Download** on your local copy, then **Restore from backup** on the deployed site.
+- Back up the Render database by downloading a JSON backup in the app, or by copying `/var/data/security-dues.db` from the disk.
+
+## Local / static deployment
+
+Running `node serve.js` locally also serves the SQLite-backed site. Uploading only the static files to Netlify, Vercel, Cloudflare Pages or GitHub Pages gives you browser-only storage, because those hosts do not run `serve.js`.
 
 When you change any cached file, bump `VERSION` in `sw.js` so installed copies pick up the update.
 
