@@ -1,12 +1,13 @@
 /* ==========================================================================
    Security Dues — a tiny offline-first ledger for neighbourhood security fees.
-   No build step, no dependencies, no server. Data lives in localStorage.
+   No build step, no dependencies. Records live in localStorage and sync to
+   the small SQLite database served by serve.js (/api/state).
    ========================================================================== */
 
 'use strict';
 
 const STORE_KEY = 'security-dues.v1';
-const APP_VERSION = '1.0.4';
+const APP_VERSION = '1.0.5';
 
 /* ---------- small helpers ---------- */
 
@@ -134,6 +135,7 @@ function money(value, { compact = false } = {}) {
 function defaultState() {
   return {
     version: 1,
+    updatedAt: null,
     settings: {
       communityName: '',
       currency: '₦',
@@ -195,7 +197,10 @@ function rebuildIndexes() {
   }
 }
 
-function save() {
+let serverSyncState = 'unknown';
+let serverSyncTimer = null;
+
+function persistLocal() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
     return true;
@@ -203,6 +208,119 @@ function save() {
     console.error(err);
     toast('Could not save — device storage may be full', 'error');
     return false;
+  }
+}
+
+function save() {
+  state.updatedAt = new Date().toISOString();
+  const ok = persistLocal();
+  queueServerSave();
+  return ok;
+}
+
+function syncLabel() {
+  if (serverSyncState === 'synced') return 'Saved to this machine';
+  if (serverSyncState === 'offline') return 'Server offline — cached in browser';
+  if (serverSyncState === 'pending') return 'Saving…';
+  return 'Not checked yet';
+}
+
+function updateSyncStatus() {
+  for (const el of $$('[data-sync-status]')) el.textContent = syncLabel();
+}
+
+function queueServerSave() {
+  serverSyncState = 'pending';
+  updateSyncStatus();
+  if (serverSyncTimer) clearTimeout(serverSyncTimer);
+  serverSyncTimer = setTimeout(() => {
+    serverSyncTimer = null;
+    pushStateToServer();
+  }, 350);
+}
+
+async function pushStateToServer() {
+  if (location.protocol === 'file:') return false;
+  if (!state.updatedAt) state.updatedAt = new Date().toISOString();
+  try {
+    const res = await fetch('/api/state', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: state, updatedAt: state.updatedAt })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const payload = await res.json().catch(() => ({}));
+    if (payload.updatedAt && payload.updatedAt !== state.updatedAt) {
+      state.updatedAt = payload.updatedAt;
+      persistLocal();
+    }
+    serverSyncState = 'synced';
+    updateSyncStatus();
+    return true;
+  } catch (err) {
+    console.warn('Could not save to the local database', err);
+    serverSyncState = 'offline';
+    updateSyncStatus();
+    return false;
+  }
+}
+
+function adoptState(parsed, updatedAt) {
+  const base = defaultState();
+  state = {
+    ...base,
+    ...parsed,
+    settings: { ...base.settings, ...(parsed.settings || {}) },
+    residents: Array.isArray(parsed.residents) ? parsed.residents : [],
+    payments: Array.isArray(parsed.payments) ? parsed.payments : []
+  };
+  if (updatedAt) state.updatedAt = updatedAt;
+  rebuildIndexes();
+  persistLocal();
+  parseHash();
+  render();
+}
+
+async function syncWithServer() {
+  if (location.protocol === 'file:') {
+    serverSyncState = 'offline';
+    return;
+  }
+  try {
+    const res = await fetch('/api/state', { cache: 'no-store' });
+    if (res.status === 204) {
+      const hasLocal = state.settings.setupComplete || state.residents.length || state.payments.length;
+      if (hasLocal) await pushStateToServer();
+      else {
+        serverSyncState = 'synced';
+        updateSyncStatus();
+      }
+      return;
+    }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const payload = await res.json();
+    const remote = payload && payload.data;
+    if (!remote || !remote.settings || !Array.isArray(remote.residents) || !Array.isArray(remote.payments)) {
+      throw new Error('Invalid ledger from server');
+    }
+    const remoteAt = Date.parse(payload.updatedAt || remote.updatedAt || '') || 0;
+    const localAt = Date.parse(state.updatedAt || '') || 0;
+    const hasLocal = state.settings.setupComplete || state.residents.length || state.payments.length;
+
+    if (!hasLocal || remoteAt > localAt) {
+      adoptState(remote, payload.updatedAt);
+      serverSyncState = 'synced';
+      updateSyncStatus();
+    } else if (localAt > remoteAt) {
+      await pushStateToServer();
+    } else {
+      serverSyncState = 'synced';
+      updateSyncStatus();
+    }
+  } catch (err) {
+    console.warn('Could not reach the local database', err);
+    serverSyncState = 'offline';
+    updateSyncStatus();
   }
 }
 
@@ -1244,6 +1362,10 @@ function viewSettings() {
     <div class="section-title"><h2>Data</h2></div>
     <div class="card">
       <div class="setting-row">
+        <div class="setting-row__text"><strong>Local database</strong><span>SQLite file on the computer running this app</span></div>
+        <div class="setting-row__control"><span class="pill" data-sync-status>${syncLabel()}</span></div>
+      </div>
+      <div class="setting-row">
         <div class="setting-row__text"><strong>Backup</strong><span>${s.lastBackupAt ? 'Last backup ' + fmtDate(s.lastBackupAt) : 'No backup downloaded yet'}</span></div>
         <div class="setting-row__control"><button type="button" class="btn btn--soft btn--sm" data-action="export-backup">${icon('download', 15)} Download</button></div>
       </div>
@@ -1262,14 +1384,14 @@ function viewSettings() {
         <div class="setting-row__text"><strong>Delete records</strong><span>Remove every household and payment, keep community settings</span></div>
         <div class="setting-row__control"><button type="button" class="btn btn--danger-ghost btn--sm" data-action="delete-records">${icon('trash', 15)} Delete records</button></div>
       </div>
-      <p class="storage-note"><b>${state.residents.length}</b> households · <b>${state.payments.length}</b> payments · about <b>${Math.max(1, Math.round(bytes / 1024))} KB</b> stored on this device.</p>
+      <p class="storage-note"><b>${state.residents.length}</b> households · <b>${state.payments.length}</b> payments · about <b>${Math.max(1, Math.round(bytes / 1024))} KB</b> cached in this browser and saved to <b>data/security-dues.db</b> on the server machine.</p>
     </div>
 
     <div class="section-title"><h2>About</h2></div>
     <div class="card">
       <p style="font-size:.86rem;color:var(--ink-soft)">
         <strong style="color:var(--ink)">Security Dues</strong> v${APP_VERSION}. A small offline ledger for neighbourhood security fees.
-        All records stay in this browser on this device — nothing is uploaded anywhere. Clearing your browser data will remove them, so download a backup now and then.
+        Records are saved in this browser and in a small SQLite database on the machine running the server. Clearing browser data will not remove the database, but download a backup now and then for safekeeping.
       </p>
       <div class="setting-row" style="margin-top:6px">
         <div class="setting-row__text"><strong>Start over</strong><span>Erase everything and run setup again</span></div>
@@ -1982,6 +2104,7 @@ async function resetApp() {
   history.replaceState(null, '', location.pathname + location.search);
   lastHash = '';
   rebuildIndexes();
+  save();
   render();
   toast('App reset');
 }
@@ -2457,6 +2580,7 @@ function boot() {
   render();
   lastHash = location.hash;
   registerServiceWorker();
+  syncWithServer();
 
   const media = window.matchMedia('(prefers-color-scheme: dark)');
   const onChange = () => applyTheme();

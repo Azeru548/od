@@ -1,6 +1,6 @@
 /* Security Dues — service worker
    Offline-first shell cache. Bump VERSION when shipping changes. */
-const VERSION = 'v1.0.4';
+const VERSION = 'v1.0.5';
 const CACHE = 'security-dues-' + VERSION;
 
 const ASSETS = [
@@ -38,6 +38,7 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/api/')) return;
 
   // App shell for navigations, cached shell as offline fallback.
   if (request.mode === 'navigate') {

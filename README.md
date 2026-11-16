@@ -2,7 +2,7 @@
 
 A small, offline-first PWA for keeping a neighbourhood security-fee ledger. Track households, record monthly payments, see who owes what, and print or share receipts.
 
-No build step, no dependencies, no server. All records stay in the browser on the device.
+No build step and no npm dependencies. A tiny local server (`serve.js`) keeps the ledger in a SQLite database on your machine, while the browser caches a copy so the app still works offline.
 
 ## What it does
 
@@ -25,30 +25,34 @@ npm start
 # open http://localhost:4173
 ```
 
-Or any static server, e.g. `npx serve .`. Opening `index.html` directly from disk mostly works, but the service worker (and therefore installability/offline) needs `http://localhost` or HTTPS.
+Requires **Node.js 22.5 or newer** — the server uses the built-in `node:sqlite` module, so there is nothing to install. Records are written to `data/security-dues.db` (created automatically).
+
+Or any static server, e.g. `npx serve .`. Opening `index.html` directly from disk mostly works, but the service worker (and therefore installability/offline) needs `http://localhost` or HTTPS, and the database sync needs the Node server.
 
 ## Deploy
 
-It is a plain static site. Drop the folder on Netlify, Vercel, Cloudflare Pages, GitHub Pages, or any web host. No environment variables, no backend.
+The front end is a plain static site, but the database API (`/api/state`) is provided by `serve.js`. If you upload only the static files to Netlify, Vercel, Cloudflare Pages or GitHub Pages, the app falls back to browser-only storage. To keep the SQLite database, run `serve.js` on your machine (or a small Node host with a persistent disk).
 
 When you change any cached file, bump `VERSION` in `sw.js` so installed copies pick up the update.
 
 ## Data & backup
 
-- Records live in `localStorage` under the key `security-dues.v1`.
-- Nothing is uploaded. Clearing browser data/site data will erase the records, so use **Settings → Download** regularly.
-- A JSON backup can be restored on the same or another device via **Settings → Restore from backup**.
+- Every save is written to `localStorage` first and then synced to `data/security-dues.db` through `/api/state`. The browser copy keeps the app usable if the server is offline; the newer copy wins on the next sync.
+- Nothing is sent to the internet. The database is a single SQLite file on this machine.
+- Clearing browser data does not delete the database, but deleting `data/security-dues.db` does. Use **Settings → Download** for a portable JSON backup, restorable on the same or another device.
 - CSV exports open in Excel, Google Sheets and Numbers.
+- In **Settings → Data**, the "Local database" row shows whether the latest change reached the database.
 
 ## Project layout
 
 ```
 index.html            app shell
 styles.css            all styling
-app.js                state, views, payments, receipts, exports
+app.js                state, views, payments, receipts, exports, sync
 manifest.webmanifest  PWA manifest
 sw.js                 offline service worker
 icons/                app icons (SVG + generated PNGs)
 tools/make-icons.ps1  regenerates the PNG icons on Windows
-serve.js              tiny local dev server
+serve.js              static server + SQLite database API
+data/                 database files (created at runtime, git-ignored)
 ```
