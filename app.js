@@ -6,7 +6,7 @@
 'use strict';
 
 const STORE_KEY = 'security-dues.v1';
-const APP_VERSION = '1.0.3';
+const APP_VERSION = '1.0.4';
 
 /* ---------- small helpers ---------- */
 
@@ -218,11 +218,54 @@ function residentById(id) {
   return state.residents.find((r) => r.id === id);
 }
 
-function feeOf(resident) {
-  const own = Number(resident && resident.fee);
-  if (Number.isFinite(own) && own > 0) return own;
+function rateEntry(history, month) {
+  if (!Array.isArray(history) || !history.length) return null;
+  const entries = history
+    .filter((entry) => entry && /^\d{4}-\d{2}$/.test(String(entry.from || '')))
+    .sort((a, b) => String(a.from).localeCompare(String(b.from)));
+  if (!entries.length) return null;
+  let found = null;
+  for (const entry of entries) {
+    if (entry.from <= month) found = entry;
+    else break;
+  }
+  return found || entries[0];
+}
+
+function upsertRate(history, from, amount) {
+  const entries = Array.isArray(history) ? history.slice() : [];
+  const index = entries.findIndex((entry) => entry && entry.from === from);
+  const record = { from, amount };
+  if (index >= 0) entries[index] = record;
+  else entries.push(record);
+  return entries
+    .filter((entry) => entry && /^\d{4}-\d{2}$/.test(String(entry.from || '')))
+    .sort((a, b) => String(a.from).localeCompare(String(b.from)));
+}
+
+function defaultFeeFor(month = monthKeyOf()) {
+  const entry = rateEntry(state.settings.feeHistory, month);
+  if (entry && entry.amount != null) {
+    const amount = Number(entry.amount);
+    if (Number.isFinite(amount) && amount >= 0) return amount;
+  }
   const fallback = Number(state.settings.defaultFee);
   return Number.isFinite(fallback) && fallback > 0 ? fallback : 0;
+}
+
+function feeOf(resident, month = monthKeyOf()) {
+  if (resident) {
+    const entry = rateEntry(resident.feeHistory, month);
+    if (entry) {
+      if (entry.amount == null) return defaultFeeFor(month);
+      const amount = Number(entry.amount);
+      if (Number.isFinite(amount) && amount > 0) return amount;
+      return defaultFeeFor(month);
+    }
+    const own = Number(resident.fee);
+    if (Number.isFinite(own) && own > 0) return own;
+  }
+  return defaultFeeFor(month);
 }
 
 function isBilled(resident, month) {
@@ -256,7 +299,7 @@ function paidForExcluding(residentId, month, excludePaymentId) {
 
 function statusOf(resident, month) {
   if (!isBilled(resident, month)) return { kind: 'na', paid: 0, due: 0 };
-  const due = feeOf(resident);
+  const due = feeOf(resident, month);
   const paid = paidFor(resident.id, month);
   let kind = 'unpaid';
   if (due <= 0) kind = 'na';
@@ -269,10 +312,9 @@ function arrearsOf(resident, asOf = monthKeyOf()) {
   if (!resident || !resident.billingStart) return 0;
   const end = resident.billingEnd && resident.billingEnd < asOf ? resident.billingEnd : asOf;
   if (end < resident.billingStart) return 0;
-  const due = feeOf(resident);
   let total = 0;
   for (const m of monthsRange(resident.billingStart, end)) {
-    total += Math.max(0, due - paidFor(resident.id, m));
+    total += Math.max(0, feeOf(resident, m) - paidFor(resident.id, m));
   }
   return r2(total);
 }
@@ -439,7 +481,7 @@ function allocate(amount, months, resident, excludePaymentId = null) {
 
   // Fill months oldest-first, fully where possible, with the remainder on the last one.
   for (const m of months) {
-    const need = Math.max(0, r2(feeOf(resident) - paidForExcluding(resident.id, m, excludePaymentId)));
+    const need = Math.max(0, r2(feeOf(resident, m) - paidForExcluding(resident.id, m, excludePaymentId)));
     const applied = Math.min(remaining, need);
     result.push({ month: m, amount: r2(applied) });
     remaining = r2(remaining - applied);
@@ -1165,13 +1207,18 @@ function viewSettings() {
           <div class="field">
             <label for="set-fee">Default monthly fee</label>
             <input id="set-fee" name="defaultFee" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(s.defaultFee)}" required>
-            <span class="hint">Used for new households; existing fees are unchanged</span>
+            <span class="hint">Used by households without their own fee</span>
           </div>
           <div class="field">
             <label for="set-due">Fee due day</label>
             <input id="set-due" name="dueDay" type="number" min="1" max="28" step="1" value="${esc(s.dueDay || 5)}">
             <span class="hint">A reminder of your collection day</span>
           </div>
+        </div>
+        <div class="field" style="margin-top:14px">
+          <label for="set-fee-from">New default applies from</label>
+          <input id="set-fee-from" name="feeFrom" type="month" value="${esc(monthKeyOf())}">
+          <span class="hint">Only used when you change the default fee. Earlier months keep their old fee.</span>
         </div>
         <p class="form-error" data-error style="margin-top:14px"></p>
         <div style="margin-top:16px"><button class="btn btn--primary" type="submit">Save changes</button></div>
@@ -1442,7 +1489,7 @@ function openPaymentModal({ residentId = null, month = null, editId = null } = {
       }
 
       function needFor(r, m) {
-        return Math.max(0, r2(feeOf(r) - paidForExcluding(r.id, m, editing ? editing.id : null)));
+        return Math.max(0, r2(feeOf(r, m) - paidForExcluding(r.id, m, editing ? editing.id : null)));
       }
 
       function renderGrid() {
@@ -1570,10 +1617,10 @@ function openResidentForm(id = null) {
       </div>
       <div class="grid-2">
         <div class="field">
-          <label for="res-fee">Monthly fee</label>
+          <label for="res-fee">Monthly fee for this household</label>
           <input id="res-fee" name="fee" type="number" inputmode="decimal" min="0" step="0.01"
             value="${resident && resident.fee != null ? esc(resident.fee) : ''}" placeholder="Default: ${esc(state.settings.defaultFee)}">
-          <span class="hint">Leave empty to use the default fee</span>
+          <span class="hint">Leave empty to use the default (${money(state.settings.defaultFee)})</span>
         </div>
         <div class="field">
           <label for="res-start">Billing starts</label>
@@ -1581,6 +1628,11 @@ function openResidentForm(id = null) {
           <span class="hint">The first month this household owes a fee</span>
         </div>
       </div>
+      ${resident ? `<div class="field">
+        <label for="res-fee-from">Fee change applies from</label>
+        <input id="res-fee-from" name="feeFrom" type="month" value="${cur}">
+        <span class="hint">Past months keep their previous fee. Set this to an older month only when correcting a wrong amount.</span>
+      </div>` : ''}
       <div class="field">
         <label for="res-notes">Notes</label>
         <textarea id="res-notes" name="notes" maxlength="300" placeholder="Optional">${resident ? esc(resident.notes || '') : ''}</textarea>
@@ -1748,7 +1800,7 @@ function printStatement(residentId) {
     <div class="print-head"><strong>${esc(state.settings.communityName || 'Security dues')}</strong><span>Statement of account</span></div>
     <div style="margin-bottom:16px">
       <div style="font-size:16px;font-weight:650">${esc(r.name)}</div>
-      <div style="font-size:12px;color:#555">${r.house ? 'House ' + esc(r.house) : ''}${r.phone ? ' · ' + esc(r.phone) : ''} · ${money(feeOf(r))} per month</div>
+      <div style="font-size:12px;color:#555">${r.house ? 'House ' + esc(r.house) : ''}${r.phone ? ' · ' + esc(r.phone) : ''} · current fee ${money(feeOf(r))} per month</div>
       <div style="font-size:11px;color:#777;margin-top:2px">Period: ${esc(monthLabel(start))} — ${esc(monthLabel(end))} · Printed ${fmtDate(isoDate())}</div>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -1833,7 +1885,7 @@ function exportPaymentsCSV() {
 }
 
 function exportHouseholdsCSV() {
-  const rows = [['Name', 'House', 'Phone', 'Monthly fee', 'Billing start', 'Billing end', 'Status', 'Total paid', 'Outstanding']];
+  const rows = [['Name', 'House', 'Phone', 'Current monthly fee', 'Billing start', 'Billing end', 'Status', 'Total paid', 'Outstanding']];
   for (const r of state.residents.slice().sort(cmpResident)) {
     rows.push([
       r.name,
@@ -2210,14 +2262,24 @@ document.addEventListener('submit', async (event) => {
     const currencyValue = String(data.get('currency') || '').trim();
     const fee = Number(data.get('defaultFee'));
     const dueDay = Number(data.get('dueDay'));
+    const feeFromRaw = String(data.get('feeFrom') || '');
+    const feeFrom = /^\d{4}-\d{2}$/.test(feeFromRaw) ? feeFromRaw : monthKeyOf();
 
     if (!name) { setFormError(form, 'Community name is required.'); return; }
     if (!currencyValue) { setFormError(form, 'Currency is required.'); return; }
     if (!Number.isFinite(fee) || fee < 0) { setFormError(form, 'Enter a valid default fee.'); return; }
 
+    const nextFee = r2(fee);
+    const prevFee = Number(state.settings.defaultFee) || 0;
+    if (nextFee !== prevFee) {
+      if (!Array.isArray(state.settings.feeHistory) || !state.settings.feeHistory.length) {
+        state.settings.feeHistory = [{ from: '2000-01', amount: prevFee }];
+      }
+      state.settings.feeHistory = upsertRate(state.settings.feeHistory, feeFrom, nextFee);
+    }
     state.settings.communityName = name;
     state.settings.currency = currencyValue;
-    state.settings.defaultFee = r2(fee);
+    state.settings.defaultFee = nextFee;
     state.settings.dueDay = clamp(Number.isFinite(dueDay) ? dueDay : 5, 1, 28);
     save();
     render();
@@ -2234,6 +2296,8 @@ document.addEventListener('submit', async (event) => {
     const billingStart = String(data.get('billingStart') || '') || monthKeyOf();
     const feeRaw = String(data.get('fee') || '').trim();
     const feeValue = feeRaw === '' ? null : Number(feeRaw);
+    const feeFromRaw = String(data.get('feeFrom') || '');
+    const feeFrom = /^\d{4}-\d{2}$/.test(feeFromRaw) ? feeFromRaw : monthKeyOf();
 
     if (!name) { setFormError(form, 'A name is required.'); return; }
     if (feeValue != null && (!Number.isFinite(feeValue) || feeValue < 0)) {
@@ -2245,6 +2309,16 @@ document.addEventListener('submit', async (event) => {
     if (id) {
       const r = residentById(id);
       if (!r) return;
+      const oldHasFee = r.fee != null;
+      const newHasFee = feeValue != null;
+      const feeChanged = oldHasFee !== newHasFee || (newHasFee && Number(r.fee) !== Number(feeValue));
+      if (feeChanged) {
+        const effectiveFrom = feeFrom < billingStart ? billingStart : feeFrom;
+        if (!Array.isArray(r.feeHistory) || !r.feeHistory.length) {
+          r.feeHistory = [{ from: billingStart, amount: feeOf(r, billingStart) }];
+        }
+        r.feeHistory = upsertRate(r.feeHistory, effectiveFrom, feeValue);
+      }
       r.name = name;
       r.house = house;
       r.phone = phone;
