@@ -2,7 +2,7 @@
 
 A small, offline-first PWA for keeping a neighbourhood security-fee ledger. Track households, record monthly payments, see who owes what, and print or share receipts.
 
-No build step and no npm dependencies. A tiny local server (`serve.js`) keeps the ledger in a SQLite database on your machine, while the browser caches a copy so the app still works offline.
+No build step and no npm dependencies. The ledger lives in a single Firebase Firestore document, while the browser keeps a copy in `localStorage` so the app still works offline.
 
 ## What it does
 
@@ -25,19 +25,42 @@ npm start
 # open http://localhost:4173
 ```
 
-Requires **Node.js 22.5 or newer** — the server uses the built-in `node:sqlite` module, so there is nothing to install. Records are written to `data/security-dues.db` (created automatically).
+Requires **Node.js 18 or newer**, and nothing to install. Records are synced to the Firestore project configured in `FIREBASE` at the top of `app.js`.
 
-Or any static server, e.g. `npx serve .`. Opening `index.html` directly from disk mostly works, but the service worker (and therefore installability/offline) needs `http://localhost` or HTTPS, and the database sync needs the Node server.
+Or any static server, e.g. `npx serve .` — the app needs no server-side code, because the browser talks to Firestore directly. Opening `index.html` directly from disk mostly works, but the service worker (and therefore installability/offline) needs `http://localhost` or HTTPS.
+
+## Firestore setup
+
+The app reads and writes one document: `ledgers/main`. Its `data` field holds the whole ledger as JSON and its `updatedAt` field decides which copy is newer on load.
+
+The web config in `app.js` is public by design — it identifies the project, it is not a credential. **Access is controlled entirely by the Firestore security rules.** The project currently denies anonymous access, so sync reports *“Firestore rules denied access”* until you publish a rule.
+
+In the Firebase console → **Firestore Database → Rules**:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /ledgers/{doc} {
+      allow read, write: if true;
+    }
+  }
+}
+```
+
+That rule makes the ledger readable and writable by anyone who has the config, which is fine for a personal backup but not for a shared community ledger. To require a signed-in user, enable an auth provider under **Authentication** and change the condition to `if request.auth != null`; every device then needs to sign in before syncing.
+
+Existing SQLite records are not migrated automatically: use **Settings → Download** on the old copy, then **Restore from backup** on the new one.
 
 ## Deploy on Render
 
-The app needs a Node service (not a static site) because the SQLite database lives on the server.
+Because the data lives in Firestore, the app is a plain static site and needs no disk or database on the host.
 
 **Option A — Blueprint (recommended)**
 
 1. Push this repo to GitHub.
 2. In Render: **New → Blueprint**, connect the repository.
-3. Render reads `render.yaml` and creates the web service plus a 1 GB disk at `/var/data`.
+3. Render reads `render.yaml` and creates the web service.
 4. When prompted, set **`APP_PASSWORD`** to a password you choose. Leave `APP_USER` as `admin` or change it.
 5. Deploy, then open the URL and complete setup.
 
@@ -46,33 +69,29 @@ The app needs a Node service (not a static site) because the SQLite database liv
 1. **New → Web Service**, connect the repo, branch `main`.
 2. Runtime **Node**; build command `npm install`; start command `node serve.js`.
 3. Add environment variables:
-   - `NODE_VERSION=22.22.1` (SQLite needs Node 22.5+)
-   - `DATA_DIR=/var/data`
    - `APP_PASSWORD=your-password` (recommended)
    - `APP_USER=admin` (optional)
-4. Add a **persistent disk**: mount path `/var/data`, 1 GB. This requires the Starter plan or higher.
-5. Set the health check path to `/api/health`. Deploy.
+4. Set the health check path to `/api/health`. Deploy.
 
 **Important**
 
-- **Without a persistent disk** (free plan), the SQLite file is erased on every deploy or restart. Use the disk for real records.
-- **The URL is public.** Set `APP_PASSWORD` so visitors are asked for a password; otherwise anyone with the link can read and edit the ledger.
-- The deployed site starts with an empty database. To move existing records, use **Settings → Download** on your local copy, then **Restore from backup** on the deployed site.
-- Back up the Render database by downloading a JSON backup in the app, or by copying `/var/data/security-dues.db` from the disk.
+- **`APP_PASSWORD` only gates the app shell.** The records themselves sit in Firestore, so they are protected by the security rules above — not by the password.
+- The ledger is shared, not per-device: every device that opens the site sees the same Firestore document.
+- `render.yaml` still requests a 1 GB disk at `/var/data`. Nothing writes there any more, so you can drop the `disk:` block and the `DATA_DIR` variable.
 
 ## Local / static deployment
 
-Running `node serve.js` locally also serves the SQLite-backed site. Uploading only the static files to Netlify, Vercel, Cloudflare Pages or GitHub Pages gives you browser-only storage, because those hosts do not run `serve.js`.
+Uploading the static files to Netlify, Vercel, Cloudflare Pages or GitHub Pages works unchanged — the browser talks to Firestore directly, so no server is required.
 
 When you change any cached file, bump `VERSION` in `sw.js` so installed copies pick up the update.
 
 ## Data & backup
 
-- Every save is written to `localStorage` first and then synced to `data/security-dues.db` through `/api/state`. The browser copy keeps the app usable if the server is offline; the newer copy wins on the next sync.
-- Nothing is sent to the internet. The database is a single SQLite file on this machine.
-- Clearing browser data does not delete the database, but deleting `data/security-dues.db` does. Use **Settings → Download** for a portable JSON backup, restorable on the same or another device.
+- Every save is written to `localStorage` first and then synced to the Firestore document `ledgers/main`. The browser copy keeps the app usable offline; the document with the newer `updatedAt` wins on the next page load.
+- Records are sent to Google Firebase. The ledger is a single document in the `ragaops-548` project.
+- Clearing browser data does not delete the document. Use **Settings → Download** for a portable JSON backup, restorable on the same or another device.
 - CSV exports open in Excel, Google Sheets and Numbers.
-- In **Settings → Data**, the "Local database" row shows whether the latest change reached the database.
+- In **Settings → Data**, the "Database" row shows whether the latest change reached Firestore: *Saved to Firestore*, *Saving…*, *Firestore unreachable — cached in browser*, or *Firestore rules denied access*.
 
 ## Project layout
 
@@ -84,6 +103,5 @@ manifest.webmanifest  PWA manifest
 sw.js                 offline service worker
 icons/                app icons (SVG + generated PNGs)
 tools/make-icons.ps1  regenerates the PNG icons on Windows
-serve.js              static server + SQLite database API
-data/                 database files (created at runtime, git-ignored)
+serve.js              static file server (optional — Firestore needs no backend)
 ```

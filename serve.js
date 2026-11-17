@@ -1,34 +1,19 @@
 /* Tiny local server for the Security Dues PWA.
-   Serves the static app and stores records in a small SQLite database.
+   Serves the static app. The ledger itself lives in Firebase Firestore and is
+   read and written by the browser, so this server stores nothing.
    Usage: npm start   (or: node serve.js)
-   Then open http://localhost:4173
-   Database file: data/security-dues.db
-   Requires Node.js 22.5+ for the built-in node:sqlite module. */
+   Then open http://localhost:4173 */
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { DatabaseSync } = require('node:sqlite');
 
 const ROOT = __dirname;
-const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, 'data');
-const DB_FILE = path.join(DATA_DIR, 'security-dues.db');
 const PORT = Number(process.env.PORT) || 4173;
-const MAX_BODY = 10 * 1024 * 1024;
 
 // Optional password gate for public deployments. Leave APP_PASSWORD unset locally.
 const APP_USER = process.env.APP_USER || 'admin';
 const APP_PASSWORD = process.env.APP_PASSWORD || '';
-
-fs.mkdirSync(DATA_DIR, { recursive: true });
-
-const db = new DatabaseSync(DB_FILE);
-db.exec('PRAGMA journal_mode = WAL;');
-db.exec(`CREATE TABLE IF NOT EXISTS app_state (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  data TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-)`);
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -68,98 +53,11 @@ function authorized(req) {
   return safeEqual(user, APP_USER) && safeEqual(pass, APP_PASSWORD);
 }
 
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    let size = 0;
-    const chunks = [];
-    req.on('data', (chunk) => {
-      size += chunk.length;
-      if (size > MAX_BODY) {
-        const err = new Error('Payload too large');
-        err.code = 'TOO_LARGE';
-        reject(err);
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
-      } catch (err) {
-        reject(err);
-      }
-    });
-    req.on('error', reject);
-  });
-}
-
-function validLedger(data) {
-  return Boolean(
-    data
-    && typeof data === 'object'
-    && data.settings
-    && typeof data.settings === 'object'
-    && Array.isArray(data.residents)
-    && Array.isArray(data.payments)
-  );
-}
-
-async function handleApi(req, res, pathname) {
+function handleApi(req, res, pathname) {
   if (pathname === '/api/health' && req.method === 'GET') {
-    sendJson(res, 200, { ok: true, storage: 'sqlite', file: path.relative(ROOT, DB_FILE) });
+    sendJson(res, 200, { ok: true, storage: 'firestore' });
     return;
   }
-
-  if (pathname === '/api/state' && req.method === 'GET') {
-    const row = db.prepare('SELECT data, updated_at FROM app_state WHERE id = 1').get();
-    if (!row) {
-      res.writeHead(204, { 'Cache-Control': 'no-store' });
-      res.end();
-      return;
-    }
-    let data = null;
-    try {
-      data = JSON.parse(row.data);
-    } catch (err) {
-      console.error('Stored ledger is not valid JSON', err);
-    }
-    if (!data) {
-      res.writeHead(204, { 'Cache-Control': 'no-store' });
-      res.end();
-      return;
-    }
-    sendJson(res, 200, { data, updatedAt: row.updated_at });
-    return;
-  }
-
-  if (pathname === '/api/state' && req.method === 'PUT') {
-    let body;
-    try {
-      body = await readBody(req);
-    } catch (err) {
-      const tooLarge = err.code === 'TOO_LARGE';
-      sendJson(res, tooLarge ? 413 : 400, { error: tooLarge ? 'Payload too large' : 'Invalid JSON' });
-      return;
-    }
-
-    if (!validLedger(body && body.data)) {
-      sendJson(res, 400, { error: 'Invalid ledger data' });
-      return;
-    }
-
-    const updatedAt = typeof body.updatedAt === 'string' && !Number.isNaN(Date.parse(body.updatedAt))
-      ? body.updatedAt
-      : new Date().toISOString();
-
-    db.prepare(`INSERT INTO app_state (id, data, updated_at) VALUES (1, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`)
-      .run(JSON.stringify(body.data), updatedAt);
-
-    sendJson(res, 200, { ok: true, updatedAt });
-    return;
-  }
-
   sendJson(res, 404, { error: 'Unknown API route' });
 }
 
@@ -184,14 +82,11 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname.startsWith('/api/')) {
-    handleApi(req, res, pathname).catch((err) => {
-      console.error('API error', err);
-      if (!res.headersSent) sendJson(res, 500, { error: 'Server error' });
-      else res.end();
-    });
+    handleApi(req, res, pathname);
     return;
   }
 
+  // Left over from the SQLite days: never serve the local data directory.
   if (pathname === '/data' || pathname.startsWith('/data/')) {
     res.writeHead(403);
     res.end('Forbidden');
@@ -233,6 +128,6 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Security Dues running at http://localhost:${PORT}`);
-  console.log(`SQLite database: ${DB_FILE}`);
+  console.log('Storage: Firebase Firestore (ledgers/main)');
   console.log(`Password protection: ${APP_PASSWORD ? 'on (' + APP_USER + ')' : 'off'}`);
 });

@@ -1,13 +1,13 @@
 /* ==========================================================================
    Security Dues — a tiny offline-first ledger for neighbourhood security fees.
-   No build step, no dependencies. Records live in localStorage and sync to
-   the small SQLite database served by serve.js (/api/state).
+   No build step, no dependencies. Records live in localStorage and sync to a
+   single Firebase Firestore document (see FIREBASE below).
    ========================================================================== */
 
 'use strict';
 
 const STORE_KEY = 'security-dues.v1';
-const APP_VERSION = '1.0.5';
+const APP_VERSION = '1.0.6';
 
 /* ---------- small helpers ---------- */
 
@@ -197,8 +197,29 @@ function rebuildIndexes() {
   }
 }
 
+/* ---------- cloud sync (Firebase Firestore) ---------- */
+
+/* Web config values are public by design — they identify the Firebase project.
+   They are not credentials. What can read and write the ledger is decided by the
+   Firestore security rules for databases/(default), not by this block. */
+const FIREBASE = {
+  apiKey: 'AIzaSyCEg3QJDpqbuLqJxk44547rquadCrxs1vM',
+  projectId: 'ragaops-548'
+};
+
+const FIRESTORE_DOC = 'ledgers/main';
+const FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE.projectId}`
+  + `/databases/(default)/documents/${FIRESTORE_DOC}`;
+const FIRESTORE_MASK = 'updateMask.fieldPaths=data&updateMask.fieldPaths=updatedAt';
+
 let serverSyncState = 'unknown';
 let serverSyncTimer = null;
+
+function firestoreField(fields, key) {
+  const value = fields && fields[key];
+  if (!value || typeof value.stringValue !== 'string') return null;
+  return value.stringValue;
+}
 
 function persistLocal() {
   try {
@@ -219,8 +240,9 @@ function save() {
 }
 
 function syncLabel() {
-  if (serverSyncState === 'synced') return 'Saved to this machine';
-  if (serverSyncState === 'offline') return 'Server offline — cached in browser';
+  if (serverSyncState === 'synced') return 'Saved to Firestore';
+  if (serverSyncState === 'denied') return 'Firestore rules denied access';
+  if (serverSyncState === 'offline') return 'Firestore unreachable — cached in browser';
   if (serverSyncState === 'pending') return 'Saving…';
   return 'Not checked yet';
 }
@@ -243,22 +265,35 @@ async function pushStateToServer() {
   if (location.protocol === 'file:') return false;
   if (!state.updatedAt) state.updatedAt = new Date().toISOString();
   try {
-    const res = await fetch('/api/state', {
-      method: 'PUT',
+    // PATCH creates the document when it does not exist yet.
+    const res = await fetch(`${FIRESTORE_URL}?key=${encodeURIComponent(FIREBASE.apiKey)}&${FIRESTORE_MASK}`, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: state, updatedAt: state.updatedAt })
+      body: JSON.stringify({
+        fields: {
+          data: { stringValue: JSON.stringify(state) },
+          updatedAt: { stringValue: state.updatedAt }
+        }
+      })
     });
+    if (res.status === 401 || res.status === 403) {
+      serverSyncState = 'denied';
+      updateSyncStatus();
+      console.warn(`Firestore denied the write to ${FIRESTORE_DOC}. Check the security rules.`);
+      return false;
+    }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const payload = await res.json().catch(() => ({}));
-    if (payload.updatedAt && payload.updatedAt !== state.updatedAt) {
-      state.updatedAt = payload.updatedAt;
+    const storedAt = firestoreField(payload.fields, 'updatedAt');
+    if (storedAt && storedAt !== state.updatedAt) {
+      state.updatedAt = storedAt;
       persistLocal();
     }
     serverSyncState = 'synced';
     updateSyncStatus();
     return true;
   } catch (err) {
-    console.warn('Could not save to the local database', err);
+    console.warn('Could not save to Firestore', err);
     serverSyncState = 'offline';
     updateSyncStatus();
     return false;
@@ -287,8 +322,32 @@ async function syncWithServer() {
     return;
   }
   try {
-    const res = await fetch('/api/state', { cache: 'no-store' });
-    if (res.status === 204) {
+    const res = await fetch(`${FIRESTORE_URL}?key=${encodeURIComponent(FIREBASE.apiKey)}`, { cache: 'no-store' });
+
+    if (res.status === 401 || res.status === 403) {
+      serverSyncState = 'denied';
+      updateSyncStatus();
+      console.warn(`Firestore denied the read of ${FIRESTORE_DOC}. Check the security rules.`);
+      return;
+    }
+    if (!res.ok && res.status !== 404) throw new Error('HTTP ' + res.status);
+
+    let remote = null;
+    let remoteUpdatedAt = null;
+    if (res.status !== 404) {
+      const payload = await res.json();
+      remoteUpdatedAt = firestoreField(payload.fields, 'updatedAt');
+      const raw = firestoreField(payload.fields, 'data');
+      try {
+        remote = raw ? JSON.parse(raw) : null;
+      } catch (err) {
+        console.error('Stored ledger is not valid JSON', err);
+        remote = null;
+      }
+    }
+
+    // A missing or unreadable document means the cloud has nothing usable yet.
+    if (!remote || !remote.settings || !Array.isArray(remote.residents) || !Array.isArray(remote.payments)) {
       const hasLocal = state.settings.setupComplete || state.residents.length || state.payments.length;
       if (hasLocal) await pushStateToServer();
       else {
@@ -297,18 +356,13 @@ async function syncWithServer() {
       }
       return;
     }
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const payload = await res.json();
-    const remote = payload && payload.data;
-    if (!remote || !remote.settings || !Array.isArray(remote.residents) || !Array.isArray(remote.payments)) {
-      throw new Error('Invalid ledger from server');
-    }
-    const remoteAt = Date.parse(payload.updatedAt || remote.updatedAt || '') || 0;
+
+    const remoteAt = Date.parse(remoteUpdatedAt || remote.updatedAt || '') || 0;
     const localAt = Date.parse(state.updatedAt || '') || 0;
     const hasLocal = state.settings.setupComplete || state.residents.length || state.payments.length;
 
     if (!hasLocal || remoteAt > localAt) {
-      adoptState(remote, payload.updatedAt);
+      adoptState(remote, remoteUpdatedAt);
       serverSyncState = 'synced';
       updateSyncStatus();
     } else if (localAt > remoteAt) {
@@ -318,7 +372,7 @@ async function syncWithServer() {
       updateSyncStatus();
     }
   } catch (err) {
-    console.warn('Could not reach the local database', err);
+    console.warn('Could not reach Firestore', err);
     serverSyncState = 'offline';
     updateSyncStatus();
   }
@@ -1362,7 +1416,7 @@ function viewSettings() {
     <div class="section-title"><h2>Data</h2></div>
     <div class="card">
       <div class="setting-row">
-        <div class="setting-row__text"><strong>Local database</strong><span>SQLite file on the computer running this app</span></div>
+        <div class="setting-row__text"><strong>Database</strong><span>Firebase Firestore · ${esc(FIREBASE.projectId)}</span></div>
         <div class="setting-row__control"><span class="pill" data-sync-status>${syncLabel()}</span></div>
       </div>
       <div class="setting-row">
@@ -1384,14 +1438,14 @@ function viewSettings() {
         <div class="setting-row__text"><strong>Delete records</strong><span>Remove every household and payment, keep community settings</span></div>
         <div class="setting-row__control"><button type="button" class="btn btn--danger-ghost btn--sm" data-action="delete-records">${icon('trash', 15)} Delete records</button></div>
       </div>
-      <p class="storage-note"><b>${state.residents.length}</b> households · <b>${state.payments.length}</b> payments · about <b>${Math.max(1, Math.round(bytes / 1024))} KB</b> cached in this browser and saved to <b>data/security-dues.db</b> on the server machine.</p>
+      <p class="storage-note"><b>${state.residents.length}</b> households · <b>${state.payments.length}</b> payments · about <b>${Math.max(1, Math.round(bytes / 1024))} KB</b> cached in this browser and synced to <b>Firestore</b>.</p>
     </div>
 
     <div class="section-title"><h2>About</h2></div>
     <div class="card">
       <p style="font-size:.86rem;color:var(--ink-soft)">
         <strong style="color:var(--ink)">Security Dues</strong> v${APP_VERSION}. A small offline ledger for neighbourhood security fees.
-        Records are saved in this browser and in a small SQLite database on the machine running the server. Clearing browser data will not remove the database, but download a backup now and then for safekeeping.
+        Records are saved in this browser and synced to Firebase Firestore. Clearing browser data will not remove the database, but download a backup now and then for safekeeping.
       </p>
       <div class="setting-row" style="margin-top:6px">
         <div class="setting-row__text"><strong>Start over</strong><span>Erase everything and run setup again</span></div>
