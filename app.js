@@ -7,7 +7,7 @@
 'use strict';
 
 const STORE_KEY = 'security-dues.v1';
-const APP_VERSION = '1.0.6';
+const APP_VERSION = '1.0.7';
 
 /* ---------- small helpers ---------- */
 
@@ -214,6 +214,8 @@ const FIRESTORE_MASK = 'updateMask.fieldPaths=data&updateMask.fieldPaths=updated
 
 let serverSyncState = 'unknown';
 let serverSyncTimer = null;
+let serverSyncError = '';
+let serverSyncRetry = 0;
 
 function firestoreField(fields, key) {
   const value = fields && fields[key];
@@ -241,18 +243,64 @@ function save() {
 
 function syncLabel() {
   if (serverSyncState === 'synced') return 'Saved to Firestore';
-  if (serverSyncState === 'denied') return 'Firestore rules denied access';
-  if (serverSyncState === 'offline') return 'Firestore unreachable — cached in browser';
+  if (serverSyncState === 'denied') return 'Firestore refused the write';
+  if (serverSyncState === 'offline') return 'Not saved to Firestore — kept in this browser';
   if (serverSyncState === 'pending') return 'Saving…';
   return 'Not checked yet';
 }
 
+function syncProblem() {
+  if (serverSyncState === 'denied') {
+    return {
+      text: 'Firestore is refusing saves from this device.',
+      detail: serverSyncError || `The security rules are blocking writes to ${FIRESTORE_DOC}.`
+    };
+  }
+  if (serverSyncState === 'offline') {
+    return {
+      text: 'Not saved to the cloud yet.',
+      detail: serverSyncError || 'This device could not reach Firestore. Your changes are safe in this browser and will upload when it can reconnect.'
+    };
+  }
+  return null;
+}
+
 function updateSyncStatus() {
   for (const el of $$('[data-sync-status]')) el.textContent = syncLabel();
+
+  const problem = syncProblem();
+  for (const slot of $$('[data-sync-slot]')) {
+    if (!problem) { slot.innerHTML = ''; continue; }
+    slot.innerHTML = `<div class="banner banner--danger" role="alert">
+      <span style="color:var(--danger)">${icon('wifiOff', 20)}</span>
+      <div class="grow"><strong>${esc(problem.text)}</strong> ${esc(problem.detail)}</div>
+      <button class="btn btn--ghost btn--sm" data-action="sync-retry">${icon('cloud', 15)} Retry</button>
+    </div>`;
+  }
+}
+
+function scheduleSyncRetry() {
+  if (serverSyncRetry >= 6) return;
+  const delay = Math.min(60000, 4000 * Math.pow(2, serverSyncRetry));
+  serverSyncRetry += 1;
+  if (serverSyncTimer) clearTimeout(serverSyncTimer);
+  serverSyncTimer = setTimeout(() => {
+    serverSyncTimer = null;
+    pushStateToServer();
+  }, delay);
+}
+
+/* A save queued a moment before the tab is closed would otherwise never leave. */
+function flushPendingSave() {
+  if (!serverSyncTimer) return;
+  clearTimeout(serverSyncTimer);
+  serverSyncTimer = null;
+  pushStateToServer({ keepalive: true });
 }
 
 function queueServerSave() {
   serverSyncState = 'pending';
+  serverSyncError = '';
   updateSyncStatus();
   if (serverSyncTimer) clearTimeout(serverSyncTimer);
   serverSyncTimer = setTimeout(() => {
@@ -261,14 +309,20 @@ function queueServerSave() {
   }, 350);
 }
 
-async function pushStateToServer() {
-  if (location.protocol === 'file:') return false;
+async function pushStateToServer({ keepalive = false } = {}) {
+  if (location.protocol === 'file:') {
+    serverSyncState = 'offline';
+    serverSyncError = 'The app is open as a file, so it cannot reach Firestore. Open it from its web address or http://localhost.';
+    updateSyncStatus();
+    return false;
+  }
   if (!state.updatedAt) state.updatedAt = new Date().toISOString();
   try {
     // PATCH creates the document when it does not exist yet.
     const res = await fetch(`${FIRESTORE_URL}?key=${encodeURIComponent(FIREBASE.apiKey)}&${FIRESTORE_MASK}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
+      keepalive,
       body: JSON.stringify({
         fields: {
           data: { stringValue: JSON.stringify(state) },
@@ -278,6 +332,7 @@ async function pushStateToServer() {
     });
     if (res.status === 401 || res.status === 403) {
       serverSyncState = 'denied';
+      serverSyncError = `Firestore answered HTTP ${res.status} for a write to ${FIRESTORE_DOC}.`;
       updateSyncStatus();
       console.warn(`Firestore denied the write to ${FIRESTORE_DOC}. Check the security rules.`);
       return false;
@@ -290,12 +345,16 @@ async function pushStateToServer() {
       persistLocal();
     }
     serverSyncState = 'synced';
+    serverSyncError = '';
+    serverSyncRetry = 0;
     updateSyncStatus();
     return true;
   } catch (err) {
     console.warn('Could not save to Firestore', err);
     serverSyncState = 'offline';
+    serverSyncError = (err && err.message ? 'Firestore request failed: ' + err.message : 'Firestore could not be reached.');
     updateSyncStatus();
+    scheduleSyncRetry();
     return false;
   }
 }
@@ -326,6 +385,7 @@ async function syncWithServer() {
 
     if (res.status === 401 || res.status === 403) {
       serverSyncState = 'denied';
+      serverSyncError = `Firestore answered HTTP ${res.status} for a read of ${FIRESTORE_DOC}.`;
       updateSyncStatus();
       console.warn(`Firestore denied the read of ${FIRESTORE_DOC}. Check the security rules.`);
       return;
@@ -374,7 +434,9 @@ async function syncWithServer() {
   } catch (err) {
     console.warn('Could not reach Firestore', err);
     serverSyncState = 'offline';
+    serverSyncError = (err && err.message ? 'Firestore request failed: ' + err.message : 'Firestore could not be reached.');
     updateSyncStatus();
+    scheduleSyncRetry();
   }
 }
 
@@ -736,7 +798,7 @@ function shell() {
         </div>
       </div>
     </header>
-    <main class="wrap">${viewContent()}</main>
+    <main class="wrap"><div data-sync-slot></div>${viewContent()}</main>
     <nav class="tabbar" aria-label="Main">
       ${tabItem('dashboard', 'Home', 'home', 'dashboard')}
       ${tabItem('residents', 'Households', 'users', 'residents')}
@@ -798,11 +860,13 @@ function render() {
   if (!state.settings.setupComplete) {
     document.body.classList.add('is-setup');
     app.innerHTML = viewSetup();
+    updateSyncStatus();
     return;
   }
 
   document.body.classList.remove('is-setup');
   app.innerHTML = shell();
+  updateSyncStatus();
 }
 
 /* ---------- setup ---------- */
@@ -822,6 +886,8 @@ function viewSetup() {
       </div>
       <h1>Set up your neighbourhood ledger</h1>
       <p class="setup__lede">Keep a clear record of who has paid their monthly security fee, who still owes, and hand out receipts in seconds.</p>
+
+      <div data-sync-slot></div>
 
       <form class="setup__form form" data-form="setup">
         <div class="field">
@@ -1417,7 +1483,10 @@ function viewSettings() {
     <div class="card">
       <div class="setting-row">
         <div class="setting-row__text"><strong>Database</strong><span>Firebase Firestore · ${esc(FIREBASE.projectId)}</span></div>
-        <div class="setting-row__control"><span class="pill" data-sync-status>${syncLabel()}</span></div>
+        <div class="setting-row__control">
+          <span class="pill" data-sync-status>${syncLabel()}</span>
+          <button type="button" class="btn btn--ghost btn--sm" data-action="sync-retry">Sync now</button>
+        </div>
       </div>
       <div class="setting-row">
         <div class="setting-row__text"><strong>Backup</strong><span>${s.lastBackupAt ? 'Last backup ' + fmtDate(s.lastBackupAt) : 'No backup downloaded yet'}</span></div>
@@ -2363,6 +2432,13 @@ document.addEventListener('click', async (event) => {
     case 'install-app':
       installApp();
       break;
+    case 'sync-retry':
+      serverSyncRetry = 0;
+      serverSyncState = 'pending';
+      updateSyncStatus();
+      toast('Checking Firestore…');
+      if (await pushStateToServer()) toast('Saved to Firestore', 'success');
+      break;
     case 'close-modal':
       closeModal();
       break;
@@ -2607,6 +2683,17 @@ function handleRoute() {
 }
 
 window.addEventListener('hashchange', handleRoute);
+
+window.addEventListener('pagehide', flushPendingSave);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushPendingSave();
+});
+window.addEventListener('online', () => {
+  if (serverSyncState === 'offline' || serverSyncState === 'pending') {
+    serverSyncRetry = 0;
+    pushStateToServer();
+  }
+});
 
 window.addEventListener('beforeinstallprompt', (event) => {
   event.preventDefault();

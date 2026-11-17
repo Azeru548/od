@@ -484,6 +484,10 @@ img, svg { display: block; }
 }
 .banner .grow { flex: 1; min-width: 0; }
 .banner strong { font-weight: 650; }
+.banner--danger {
+  border-color: color-mix(in srgb, var(--danger) 32%, transparent);
+  background: var(--danger-soft);
+}
 
 /* ---------- rows ---------- */
 
