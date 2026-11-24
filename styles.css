@@ -7,28 +7,28 @@
 *::after { box-sizing: border-box; }
 
 :root {
-  --bg: #f4f6f2;
-  --bg-deep: #e9eee6;
+  --bg: #f4f6fb;
+  --bg-deep: #e8edf7;
   --surface: #ffffff;
-  --surface-2: #f8faf7;
-  --surface-3: #eef3ec;
-  --line: #e2e8df;
-  --line-strong: #cfd9cc;
-  --ink: #14231c;
-  --ink-soft: #4f6157;
-  --ink-mute: #7c8c83;
-  --accent: #14694d;
-  --accent-strong: #0f533c;
-  --accent-soft: #e2f0e9;
-  --accent-ink: #0b3b2b;
-  --gold: #a97a26;
+  --surface-2: #f8faff;
+  --surface-3: #eef2fb;
+  --line: #dde4f1;
+  --line-strong: #c6d2e8;
+  --ink: #16203a;
+  --ink-soft: #4d5b78;
+  --ink-mute: #5f6d89;
+  --accent: #3b4fae;
+  --accent-strong: #2d3c8a;
+  --accent-soft: #e8ecfb;
+  --accent-ink: #1b2350;
+  --gold: #9a6b1f;
   --gold-soft: #fbf2df;
-  --danger: #b14435;
-  --danger-soft: #fbeae7;
-  --hero: #0e3a2b;
-  --hero-2: #176b4d;
-  --shadow-sm: 0 1px 2px rgba(16, 40, 30, .05);
-  --shadow: 0 1px 2px rgba(16, 40, 30, .05), 0 10px 28px -18px rgba(16, 40, 30, .35);
+  --danger: #b23b48;
+  --danger-soft: #fbe9ec;
+  --hero: #1b2450;
+  --hero-2: #33439a;
+  --shadow-sm: 0 1px 2px rgba(22, 32, 58, .05);
+  --shadow: 0 1px 2px rgba(22, 32, 58, .05), 0 10px 28px -18px rgba(22, 32, 58, .45);
   --radius: 18px;
   --radius-sm: 12px;
   --radius-xs: 9px;
@@ -39,26 +39,26 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0b110e;
-    --bg-deep: #0f1713;
-    --surface: #141d18;
-    --surface-2: #18231d;
-    --surface-3: #1d2a23;
-    --line: #26352c;
-    --line-strong: #37493e;
-    --ink: #e9f0ea;
-    --ink-soft: #b0c0b6;
-    --ink-mute: #86978c;
-    --accent: #4cba8d;
-    --accent-strong: #5fc99b;
-    --accent-soft: #143227;
-    --accent-ink: #d9f4e7;
-    --gold: #e0b467;
-    --gold-soft: #332a16;
-    --danger: #f0917f;
-    --danger-soft: #3a211c;
-    --hero: #0b2b20;
-    --hero-2: #145039;
+    --bg: #0b0f1c;
+    --bg-deep: #101629;
+    --surface: #151c30;
+    --surface-2: #1a2339;
+    --surface-3: #202b45;
+    --line: #2b3654;
+    --line-strong: #3b4a70;
+    --ink: #eef2ff;
+    --ink-soft: #b8c4e2;
+    --ink-mute: #8f9dbe;
+    --accent: #96a6ff;
+    --accent-strong: #aebbff;
+    --accent-soft: #1e2a55;
+    --accent-ink: #e9edff;
+    --gold: #e5bd72;
+    --gold-soft: #332b18;
+    --danger: #ff9a9a;
+    --danger-soft: #3a2028;
+    --hero: #141b3a;
+    --hero-2: #26347a;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, .35);
     --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 16px 36px -22px rgba(0, 0, 0, .9);
   }
@@ -896,7 +896,7 @@ table.data tfoot td { font-weight: 650; border-top: 1px solid var(--line-strong)
 .receipt__brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .receipt__mark {
   width: 34px; height: 34px; flex: none; display: grid; place-items: center;
-  border-radius: 10px; background: linear-gradient(145deg, var(--hero-2), var(--hero)); color: #eaf5ee;
+  border-radius: 10px; background: linear-gradient(145deg, var(--hero-2), var(--hero)); color: #eef1ff;
 }
 .receipt__brand strong { display: block; font-size: .88rem; line-height: 1.2; }
 .receipt__brand span { display: block; font-size: .64rem; text-transform: uppercase; letter-spacing: .12em; color: var(--ink-mute); }

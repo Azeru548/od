@@ -20,8 +20,8 @@ function New-Icon {
   $bg = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
     (New-Object System.Drawing.Point(0, 0)),
     (New-Object System.Drawing.Point($Size, $Size)),
-    [System.Drawing.ColorTranslator]::FromHtml('#176b4d'),
-    [System.Drawing.ColorTranslator]::FromHtml('#0b2e22'))
+    [System.Drawing.ColorTranslator]::FromHtml('#33439a'),
+    [System.Drawing.ColorTranslator]::FromHtml('#141b3a'))
   if ($Maskable) {
     $g.FillRectangle($bg, 0, 0, $Size, $Size)
   } elseif ($Rounded) {
@@ -58,7 +58,7 @@ function New-Icon {
   $shield.AddPolygon($pts)
   $shield.CloseFigure()
 
-  $white = [System.Drawing.ColorTranslator]::FromHtml('#eaf5ee')
+  $white = [System.Drawing.ColorTranslator]::FromHtml('#eef1ff')
   $stroke = New-Object System.Drawing.Pen($white, ($s * 0.075))
   $stroke.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
   $g.DrawPath($stroke, $shield)

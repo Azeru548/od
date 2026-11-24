@@ -2,7 +2,7 @@
 
 A small, offline-first PWA for keeping a neighbourhood security-fee ledger. Track households, record monthly payments, see who owes what, and print or share receipts.
 
-No build step and no npm dependencies. The ledger lives in a single Firebase Firestore document, while the browser keeps a copy in `localStorage` so the app still works offline.
+No build step and no npm dependencies. **This is the personal copy** — it has its own blue identity and its own Firestore document (`ledgers/personal`). The ledger lives in Firestore while the browser keeps a copy in `localStorage` so the app still works offline. The households match the main app, but payment records start empty.
 
 ## What it does
 
@@ -52,38 +52,21 @@ That rule makes the ledger readable and writable by anyone who has the config, w
 
 Existing SQLite records are not migrated automatically: use **Settings → Download** on the old copy, then **Restore from backup** on the new one.
 
-## Deploy on Render
+## Deploy
 
-Because the data lives in Firestore, the app is a plain static site and needs no disk or database on the host.
+This is a plain static site. Publish the files from the `personal` branch on **Netlify**, **PxlSpace**, or any static host:
 
-**Option A — Blueprint (recommended)**
+- Build command: **none**
+- Publish directory: **project root**
+- No environment variables and no server-side database are needed — the browser talks to Firestore directly.
 
-1. Push this repo to GitHub.
-2. In Render: **New → Blueprint**, connect the repository.
-3. Render reads `render.yaml` and creates the web service.
-4. When prompted, set **`APP_PASSWORD`** to a password you choose. Leave `APP_USER` as `admin` or change it.
-5. Deploy, then open the URL and complete setup.
-
-**Option B — Manual web service**
-
-1. **New → Web Service**, connect the repo, branch `main`.
-2. Runtime **Node**; build command `npm install`; start command `node serve.js`.
-3. Add environment variables:
-   - `APP_PASSWORD=your-password` (recommended)
-   - `APP_USER=admin` (optional)
-4. Set the health check path to `/api/health`. Deploy.
+The personal ledger is the Firestore document `ledgers/personal`. The main app uses `ledgers/main`, so they do not share records.
 
 **Important**
 
-- **`APP_PASSWORD` only gates the app shell.** The records themselves sit in Firestore, so they are protected by the security rules above — not by the password.
-- The ledger is shared, not per-device: every device that opens the site sees the same Firestore document.
-- `render.yaml` still requests a 1 GB disk at `/var/data`. Nothing writes there any more, so you can drop the `disk:` block and the `DATA_DIR` variable.
-
-## Local / static deployment
-
-Uploading the static files to Netlify, Vercel, Cloudflare Pages or GitHub Pages works unchanged — the browser talks to Firestore directly, so no server is required.
-
-When you change any cached file, bump `VERSION` in `sw.js` so installed copies pick up the update.
+- The hosted URL is public. Access is controlled by the Firestore security rules, not by the hosting platform.
+- Every device opening the site sees the same personal ledger.
+- When you change any cached file, bump `VERSION` in `sw.js` so installed copies pick up the update.
 
 ## Data & backup
 

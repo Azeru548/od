@@ -1,8 +1,8 @@
 {
-  "name": "security-dues",
-  "version": "1.0.7",
+  "name": "security-dues-personal",
+  "version": "1.0.8",
   "private": true,
-  "description": "Offline-first PWA for tracking monthly neighbourhood security fees.",
+  "description": "Personal copy of the offline-first neighbourhood security-fee ledger.",
   "scripts": {
     "start": "node serve.js",
     "icons": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/make-icons.ps1"

@@ -743,7 +743,7 @@ function applyTheme() {
   const dark = theme === 'dark'
     || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', dark ? '#0b110e' : '#f4f6f2');
+  if (meta) meta.setAttribute('content', dark ? '#0b0f1c' : '#f4f6fb');
 }
 
 function parseHash() {
@@ -774,7 +774,7 @@ function tabItem(view, label, iconName, path) {
 }
 
 function shell() {
-  const name = state.settings.communityName || 'Security Dues';
+  const name = state.settings.communityName || 'Personal Ledger';
   return `
     <header class="topbar">
       <div class="topbar__inner">
@@ -782,7 +782,7 @@ function shell() {
           <span class="brand__mark">${shieldMark(22)}</span>
           <span class="brand__text">
             <strong>${esc(name)}</strong>
-            <span>Security dues ledger</span>
+            <span>Personal security ledger</span>
           </span>
         </a>
         <nav class="topnav" aria-label="Main">
@@ -883,7 +883,7 @@ function viewSetup() {
     <div class="setup__panel">
       <div class="setup__brand">
         <span class="brand__mark">${shieldMark(22)}</span>
-        <span>Security Dues</span>
+        <span>Personal Ledger</span>
       </div>
       <h1>Set up your neighbourhood ledger</h1>
       <p class="setup__lede">Keep a clear record of who has paid their monthly security fee, who still owes, and hand out receipts in seconds.</p>
@@ -1514,7 +1514,7 @@ function viewSettings() {
     <div class="section-title"><h2>About</h2></div>
     <div class="card">
       <p style="font-size:.86rem;color:var(--ink-soft)">
-        <strong style="color:var(--ink)">Security Dues</strong> v${APP_VERSION}. A small offline ledger for neighbourhood security fees.
+        <strong style="color:var(--ink)">Personal Ledger</strong> v${APP_VERSION}. Your personal copy of the neighbourhood security-fee ledger.
         Records are saved in this browser and synced to Firebase Firestore. Clearing browser data will not remove the database, but download a backup now and then for safekeeping.
       </p>
       <div class="setting-row" style="margin-top:6px">
@@ -2038,7 +2038,7 @@ function printStatement(residentId) {
       <td style="padding:7px 9px;border-bottom:1px solid #ddd">${esc(monthLabel(m))}</td>
       <td style="padding:7px 9px;border-bottom:1px solid #ddd;text-align:right">${money(s.due)}</td>
       <td style="padding:7px 9px;border-bottom:1px solid #ddd;text-align:right">${money(s.paid)}</td>
-      <td style="padding:7px 9px;border-bottom:1px solid #ddd;text-align:right;color:${balance > 0 ? '#b14435' : 'inherit'}">${money(balance)}</td>
+      <td style="padding:7px 9px;border-bottom:1px solid #ddd;text-align:right;color:${balance > 0 ? '#b23b48' : 'inherit'}">${money(balance)}</td>
     </tr>`;
   }).join('');
 
@@ -2051,20 +2051,20 @@ function printStatement(residentId) {
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
       <thead><tr>
-        <th style="text-align:left;padding:7px 9px;border-bottom:2px solid #0e3a2b">Month</th>
-        <th style="text-align:right;padding:7px 9px;border-bottom:2px solid #0e3a2b">Due</th>
-        <th style="text-align:right;padding:7px 9px;border-bottom:2px solid #0e3a2b">Paid</th>
-        <th style="text-align:right;padding:7px 9px;border-bottom:2px solid #0e3a2b">Balance</th>
+        <th style="text-align:left;padding:7px 9px;border-bottom:2px solid #1b2450">Month</th>
+        <th style="text-align:right;padding:7px 9px;border-bottom:2px solid #1b2450">Due</th>
+        <th style="text-align:right;padding:7px 9px;border-bottom:2px solid #1b2450">Paid</th>
+        <th style="text-align:right;padding:7px 9px;border-bottom:2px solid #1b2450">Balance</th>
       </tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr>
-        <td style="padding:9px;border-top:2px solid #0e3a2b;font-weight:650">Total</td>
-        <td style="padding:9px;border-top:2px solid #0e3a2b;text-align:right;font-weight:650">${money(totalDue)}</td>
-        <td style="padding:9px;border-top:2px solid #0e3a2b;text-align:right;font-weight:650">${money(totalPaid)}</td>
-        <td style="padding:9px;border-top:2px solid #0e3a2b;text-align:right;font-weight:650;color:${totalDue - totalPaid > 0 ? '#b14435' : 'inherit'}">${money(Math.max(0, totalDue - totalPaid))}</td>
+        <td style="padding:9px;border-top:2px solid #1b2450;font-weight:650">Total</td>
+        <td style="padding:9px;border-top:2px solid #1b2450;text-align:right;font-weight:650">${money(totalDue)}</td>
+        <td style="padding:9px;border-top:2px solid #1b2450;text-align:right;font-weight:650">${money(totalPaid)}</td>
+        <td style="padding:9px;border-top:2px solid #1b2450;text-align:right;font-weight:650;color:${totalDue - totalPaid > 0 ? '#b23b48' : 'inherit'}">${money(Math.max(0, totalDue - totalPaid))}</td>
       </tr></tfoot>
     </table>
-    <p style="margin-top:18px;font-size:10px;color:#777">Outstanding balance: ${money(Math.max(0, totalDue - totalPaid))} · Statement generated from the Security Dues ledger.</p>
+    <p style="margin-top:18px;font-size:10px;color:#777">Outstanding balance: ${money(Math.max(0, totalDue - totalPaid))} · Statement generated from your Personal Ledger.</p>
   </div>`;
   window.print();
 }

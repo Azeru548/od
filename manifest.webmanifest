@@ -1,13 +1,13 @@
 {
-  "name": "Security Dues — Neighbourhood Ledger",
-  "short_name": "Security Dues",
-  "description": "Keep a simple, offline record of monthly neighbourhood security fee payments, arrears and receipts.",
+  "name": "Personal Ledger — Security Dues",
+  "short_name": "Personal Ledger",
+  "description": "Your personal copy of the neighbourhood security-fee ledger: payments, arrears and receipts, offline.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#f4f6f2",
-  "theme_color": "#0f3d2e",
+  "background_color": "#f4f6fb",
+  "theme_color": "#2d3c8a",
   "categories": ["finance", "productivity", "utilities"],
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
