@@ -207,7 +207,8 @@ const FIREBASE = {
   projectId: 'ragaops-548'
 };
 
-const FIRESTORE_DOC = 'ledgers/main';
+/* Personal copy: separate Firestore document, same app code. */
+const FIRESTORE_DOC = 'ledgers/personal';
 const FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE.projectId}`
   + `/databases/(default)/documents/${FIRESTORE_DOC}`;
 const FIRESTORE_MASK = 'updateMask.fieldPaths=data&updateMask.fieldPaths=updatedAt';
