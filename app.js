@@ -7,7 +7,7 @@
 'use strict';
 
 const STORE_KEY = 'security-dues.v1';
-const APP_VERSION = '1.0.7';
+const APP_VERSION = '1.0.8';
 
 /* ---------- small helpers ---------- */
 
@@ -916,7 +916,7 @@ function viewSetup() {
         <li>${icon('check', 16)} No account, no subscription</li>
         <li>${icon('check', 16)} Export a backup any time</li>
       </ul>
-      <p class="setup__fine">Records are stored only on this device and browser. Download a backup regularly.</p>
+      <p class="setup__fine">Records are synced to Firestore and cached in this browser. Download a backup regularly.</p>
     </div>
     <aside class="setup__art" aria-hidden="true">
       <div class="setup__art-inner">
@@ -937,7 +937,7 @@ function backupBanner() {
     <span style="color:var(--gold)">${icon('cloud', 20)}</span>
     <div class="grow">
       <strong>Keep a backup.</strong>
-      ${state.settings.lastBackupAt ? 'It has been over a month since your last one.' : 'Your records live only on this device.'}
+      ${state.settings.lastBackupAt ? 'It has been over a month since your last backup.' : 'Records are synced to Firestore, but download a backup for safekeeping.'}
     </div>
     <button class="btn btn--ghost btn--sm" data-action="export-backup">Download</button>
   </div>`;
