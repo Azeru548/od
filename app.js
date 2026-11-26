@@ -7,7 +7,10 @@
 'use strict';
 
 const STORE_KEY = 'security-dues.v1';
-const APP_VERSION = '1.0.7';
+const APP_VERSION = '1.0.9';
+
+/* Personal ledger starts billing from June 2025, including new households. */
+const DEFAULT_BILLING_START = '2025-06';
 
 /* ---------- small helpers ---------- */
 
@@ -1870,7 +1873,7 @@ function openResidentForm(id = null) {
         </div>
         <div class="field">
           <label for="res-start">Billing starts</label>
-          <input id="res-start" name="billingStart" type="month" value="${resident && resident.billingStart ? resident.billingStart : cur}" required>
+          <input id="res-start" name="billingStart" type="month" value="${resident && resident.billingStart ? resident.billingStart : DEFAULT_BILLING_START}" required>
           <span class="hint">The first month this household owes a fee</span>
         </div>
       </div>
@@ -2547,7 +2550,7 @@ document.addEventListener('submit', async (event) => {
     const house = String(data.get('house') || '').trim();
     const phone = String(data.get('phone') || '').trim();
     const notes = String(data.get('notes') || '').trim();
-    const billingStart = String(data.get('billingStart') || '') || monthKeyOf();
+    const billingStart = String(data.get('billingStart') || '') || DEFAULT_BILLING_START;
     const feeRaw = String(data.get('fee') || '').trim();
     const feeValue = feeRaw === '' ? null : Number(feeRaw);
     const feeFromRaw = String(data.get('feeFrom') || '');

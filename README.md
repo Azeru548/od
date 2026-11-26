@@ -2,7 +2,7 @@
 
 A small, offline-first PWA for keeping a neighbourhood security-fee ledger. Track households, record monthly payments, see who owes what, and print or share receipts.
 
-No build step and no npm dependencies. **This is the personal copy** — it has its own blue identity and its own Firestore document (`ledgers/personal`). The ledger lives in Firestore while the browser keeps a copy in `localStorage` so the app still works offline. The households match the main app, but payment records start empty.
+No build step and no npm dependencies. **This is the personal copy** — it has its own blue identity and its own Firestore document (`ledgers/personal`). The ledger lives in Firestore while the browser keeps a copy in `localStorage` so the app still works offline. The households match the main app, but payment records start empty. Billing starts in **June 2025** for every household, and new households default to that month.
 
 ## What it does
 

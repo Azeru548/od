@@ -1,6 +1,6 @@
 {
   "name": "security-dues-personal",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "private": true,
   "description": "Personal copy of the offline-first neighbourhood security-fee ledger.",
   "scripts": {
