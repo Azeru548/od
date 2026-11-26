@@ -16,7 +16,7 @@ No build step and no npm dependencies. **This is the personal copy** — it has 
 - **Statement** — print a full statement of account for one household.
 - **Archive** — mark a household as moved out without losing history.
 - **Offline + installable** — service worker caches the app shell; install it from the browser menu.
-- **Light / dark theme**, mobile-first layout.
+- **Light-only blue theme**, mobile-first layout — no system dark mode or theme switch.
 
 ## Run it locally
 

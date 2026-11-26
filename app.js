@@ -7,7 +7,7 @@
 'use strict';
 
 const STORE_KEY = 'security-dues.v1';
-const APP_VERSION = '1.0.9';
+const APP_VERSION = '1.1.0';
 
 /* Personal ledger starts billing from June 2025, including new households. */
 const DEFAULT_BILLING_START = '2025-06';
@@ -144,7 +144,7 @@ function defaultState() {
       currency: '₦',
       defaultFee: 1000,
       dueDay: 5,
-      theme: 'system',
+      theme: 'light',
       setupComplete: false,
       lastBackupAt: null,
       receiptSeq: 1
@@ -738,15 +738,11 @@ function allocate(amount, months, resident, excludePaymentId = null) {
    ========================================================================== */
 
 function applyTheme() {
-  const theme = state.settings.theme || 'system';
-  const root = document.documentElement;
-  if (theme === 'system') root.removeAttribute('data-theme');
-  else root.setAttribute('data-theme', theme);
-
-  const dark = theme === 'dark'
-    || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  /* Personal ledger is light-only; ignore any saved or system dark preference. */
+  document.documentElement.setAttribute('data-theme', 'light');
+  if (state.settings) state.settings.theme = 'light';
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', dark ? '#0b0f1c' : '#f4f6fb');
+  if (meta) meta.setAttribute('content', '#f4f6fb');
 }
 
 function parseHash() {
@@ -1467,14 +1463,8 @@ function viewSettings() {
       </div>
     </form>
 
-    <div class="section-title"><h2>Appearance</h2></div>
+    <div class="section-title"><h2>Install</h2></div>
     <div class="card">
-      <div class="setting-row">
-        <div class="setting-row__text"><strong>Theme</strong><span>Follow your device or pick one</span></div>
-        <div class="segmented" role="group" aria-label="Theme">
-          ${['system', 'light', 'dark'].map((t) => `<button type="button" data-action="set-theme" data-theme="${t}" aria-pressed="${(s.theme || 'system') === t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join('')}
-        </div>
-      </div>
       <div class="setting-row">
         <div class="setting-row__text"><strong>Install on this device</strong><span>${installable ? 'Add it to your home screen for one-tap access' : 'Use your browser menu → "Add to Home screen" to install'}</span></div>
         <div class="setting-row__control">
@@ -2407,14 +2397,6 @@ document.addEventListener('click', async (event) => {
       ui.filter = el.getAttribute('data-filter') || 'all';
       render();
       break;
-    case 'set-theme':
-      state.settings.theme = el.getAttribute('data-theme') || 'system';
-      save();
-      applyTheme();
-      $$('.segmented button[data-action="set-theme"]').forEach((btn) => {
-        btn.setAttribute('aria-pressed', String(btn.getAttribute('data-theme') === state.settings.theme));
-      });
-      break;
     case 'export-backup':
       exportBackup();
       break;
@@ -2726,11 +2708,6 @@ function boot() {
   lastHash = location.hash;
   registerServiceWorker();
   syncWithServer();
-
-  const media = window.matchMedia('(prefers-color-scheme: dark)');
-  const onChange = () => applyTheme();
-  if (media.addEventListener) media.addEventListener('change', onChange);
-  else if (media.addListener) media.addListener(onChange);
 }
 
 boot();

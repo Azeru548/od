@@ -1,6 +1,6 @@
 /* Security Dues — service worker
    Offline-first shell cache. Bump VERSION when shipping changes. */
-const VERSION = 'v1.0.9';
+const VERSION = 'v1.1.0';
 const CACHE = 'security-dues-personal-' + VERSION;
 
 const ASSETS = [
